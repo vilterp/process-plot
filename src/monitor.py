@@ -1,4 +1,3 @@
-# monitor.py
 import psutil
 import subprocess
 import time
