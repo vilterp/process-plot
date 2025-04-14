@@ -6,32 +6,41 @@ import threading
 import csv
 from datetime import datetime
 
-def monitor_process(proc, interval, output_file):
-    pid = proc.pid
-    p = psutil.Process(pid)
-
+def write_metrics_to_csv(process, interval, output_file):
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['timestamp', 'cpu_percent', 'memory_mb'])
-        while proc.poll() is None:
+        while process.is_running():
             try:
-                cpu = p.cpu_percent(interval=None)
-                mem = p.memory_info().rss / (1024 * 1024)  # MB
+                cpu = process.cpu_percent(interval=None)
+                mem = process.memory_info().rss / (1024 * 1024)  # MB
                 writer.writerow([datetime.now().isoformat(), cpu, mem])
                 f.flush()
             except psutil.NoSuchProcess:
                 break
             time.sleep(interval)
 
+def monitor_process(proc, interval, output_file):
+    write_metrics_to_csv(psutil.Process(proc.pid), interval, output_file)
+
+def monitor_process_by_pid(pid, interval, output_file):
+    write_metrics_to_csv(psutil.Process(pid), interval, output_file)
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', nargs=argparse.REMAINDER)
+    parser.add_argument('command', nargs=argparse.REMAINDER, help='Command to run')
+    parser.add_argument('--pid', type=int, help='PID of the process to monitor')
     parser.add_argument('--interval', type=float, default=1.0, help='Sampling interval in seconds')
     parser.add_argument('--output', default='metrics.csv', help='CSV file to write metrics to')
     args = parser.parse_args()
 
+    if args.pid:
+        monitor_process_by_pid(args.pid, args.interval, args.output)
+        print(f"Monitoring complete. Metrics written to {args.output}")
+        return
+
     if not args.command:
-        print("You must specify a command to run.")
+        print("You must specify a command to run or a PID to monitor.")
         return
 
     proc = subprocess.Popen(args.command)
