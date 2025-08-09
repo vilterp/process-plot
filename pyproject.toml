@@ -1,17 +1,17 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "process-plot"
 version = "0.1.0"
-description = "A project to monitor and plot CPU and memory usage."
-requires-python = ">=3.6"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent"
-]
+description = "Process monitoring and plotting tool"
+requires-python = ">=3.8"
 dependencies = [
+    "psutil",
     "matplotlib",
-    "pandas"
+    "pandas",
 ]
 
-[tool.scripts]
-render = { callable = "src.render:main" }
+[project.scripts]
+process-plot = "src.process_plot:main"
