@@ -7,6 +7,7 @@ import threading
 import csv
 import os
 from datetime import datetime
+import uuid
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -138,6 +139,11 @@ def render_comparison_plot(csv_file, output_file):
 
 def cmd_monitor(args):
     """Monitor a single process"""
+    # Generate default output filename if not provided
+    if not args.output:
+        unique_suffix = str(uuid.uuid4())[:8]
+        args.output = f"metrics_{unique_suffix}.csv"
+    
     if args.pid:
         monitor_process_by_pid(args.pid, args.interval, args.output)
         print(f"Monitoring complete. Metrics written to {args.output}")
@@ -163,6 +169,11 @@ def cmd_monitor(args):
 
 def cmd_compare(args):
     """Compare two processes run serially"""
+    # Generate default output filename if not provided
+    if not args.output:
+        unique_suffix = str(uuid.uuid4())[:8]
+        args.output = f"comparison_{unique_suffix}.csv"
+    
     # Initialize CSV file with headers
     with open(args.output, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -197,10 +208,11 @@ def cmd_compare(args):
     
     # Auto-render if requested
     if args.render:
-        # Generate plot filename from labels
+        # Generate plot filename from labels with unique suffix
         safe_label1 = "".join(c for c in args.label1 if c.isalnum() or c in (' ', '-', '_')).rstrip()
         safe_label2 = "".join(c for c in args.label2 if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        plot_filename = f"{safe_label1}_vs_{safe_label2}.png".replace(' ', '_')
+        unique_suffix = str(uuid.uuid4())[:8]
+        plot_filename = f"{safe_label1}_vs_{safe_label2}_{unique_suffix}.png".replace(' ', '_')
         
         if render_comparison_plot(args.output, plot_filename):
             print(f"Comparison plot saved to {plot_filename}")
@@ -209,24 +221,61 @@ def cmd_compare(args):
 
 def cmd_render(args):
     """Render plot from CSV data"""
-    if not os.path.exists(args.input):
-        print(f"Input file {args.input} does not exist.")
-        return
+    # Generate default output filename if not provided
+    if not args.output:
+        unique_suffix = str(uuid.uuid4())[:8]
+        base_name = os.path.splitext(os.path.basename(args.input))[0]
+        args.output = f"{base_name}_plot_{unique_suffix}.png"
     
-    # Determine plot type based on CSV format
-    df = pd.read_csv(args.input, nrows=1)
-    if 'command' in df.columns:
-        # Comparison plot
-        if render_comparison_plot(args.input, args.output):
-            print(f"Comparison plot saved to {args.output}")
-        else:
-            print("Failed to create comparison plot.")
+    if args.watch:
+        print(f"Watch mode: updating plot every 1 second. Press Ctrl+C to stop.")
+        try:
+            while True:
+                if os.path.exists(args.input):
+                    # Determine plot type based on CSV format
+                    try:
+                        df = pd.read_csv(args.input, nrows=1)
+                        if len(df) > 0:
+                            if 'command' in df.columns:
+                                # Comparison plot
+                                if render_comparison_plot(args.input, args.output):
+                                    print(f"Comparison plot updated: {args.output}")
+                                else:
+                                    print("Waiting for more data...")
+                            else:
+                                # Single process plot
+                                if render_single_plot(args.input, args.output):
+                                    print(f"Plot updated: {args.output}")
+                                else:
+                                    print("Waiting for more data...")
+                        else:
+                            print("Waiting for data...")
+                    except (pd.errors.EmptyDataError, pd.errors.ParserError):
+                        print("Waiting for valid data...")
+                else:
+                    print(f"Waiting for CSV file: {args.input}")
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nWatch mode stopped.")
     else:
-        # Single process plot
-        if render_single_plot(args.input, args.output):
-            print(f"Plot saved to {args.output}")
+        if not os.path.exists(args.input):
+            print(f"Input file {args.input} does not exist.")
+            return
+        
+        # Determine plot type based on CSV format
+        df = pd.read_csv(args.input, nrows=1)
+        if 'command' in df.columns:
+            # Comparison plot
+            if render_comparison_plot(args.input, args.output):
+                print(f"Comparison plot saved to {args.output}")
+            else:
+                print("Failed to create comparison plot.")
         else:
-            print("Failed to create plot.")
+            # Single process plot
+            if render_single_plot(args.input, args.output):
+                print(f"Plot saved to {args.output}")
+            else:
+                print("Failed to create plot.")
 
 def main():
     parser = argparse.ArgumentParser(description='Process monitoring and plotting tool')
@@ -237,7 +286,7 @@ def main():
     monitor_parser.add_argument('command', nargs='*', help='Command to run')
     monitor_parser.add_argument('--pid', type=int, help='PID of the process to monitor')
     monitor_parser.add_argument('--interval', type=float, default=0.1, help='Sampling interval in seconds')
-    monitor_parser.add_argument('--output', default='metrics.csv', help='CSV file to write metrics to')
+    monitor_parser.add_argument('--output', help='CSV file to write metrics to (default: auto-generated with unique suffix)')
     monitor_parser.set_defaults(func=cmd_monitor)
     
     # Compare subcommand
@@ -245,7 +294,7 @@ def main():
     compare_parser.add_argument('--command1', nargs='+', required=True, help='First command to run')
     compare_parser.add_argument('--command2', nargs='+', required=True, help='Second command to run')
     compare_parser.add_argument('--interval', type=float, default=0.1, help='Sampling interval in seconds')
-    compare_parser.add_argument('--output', default='comparison.csv', help='CSV file to write metrics to')
+    compare_parser.add_argument('--output', help='CSV file to write metrics to (default: auto-generated with unique suffix)')
     compare_parser.add_argument('--label1', default='Command 1', help='Label for first command')
     compare_parser.add_argument('--label2', default='Command 2', help='Label for second command')
     compare_parser.add_argument('--render', action='store_true', help='Automatically render plot after comparison')
@@ -254,7 +303,8 @@ def main():
     # Render subcommand
     render_parser = subparsers.add_parser('render', help='Render plot from CSV data')
     render_parser.add_argument('--input', default='metrics.csv', help='Input CSV file')
-    render_parser.add_argument('--output', default='plot.png', help='Output PNG file')
+    render_parser.add_argument('--output', help='Output PNG file (default: auto-generated with unique suffix)')
+    render_parser.add_argument('--watch', action='store_true', help='Watch mode: continuously update plot every 1 second')
     render_parser.set_defaults(func=cmd_render)
     
     args = parser.parse_args()
